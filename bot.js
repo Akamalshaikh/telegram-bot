@@ -1,31 +1,62 @@
 require("dotenv").config();
 const { Telegraf } = require("telegraf");
+const fs = require("fs");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const channel = process.env.CHANNEL_USERNAME;
 const adminUsername = process.env.ADMIN_USERNAME;
+const referralFile = "referrals.json";
 
-const referrals = new Map(); // Store referrals
+// 🔄 Load Referral Data
+function loadReferrals() {
+  if (fs.existsSync(referralFile)) {
+    return JSON.parse(fs.readFileSync(referralFile));
+  }
+  return {};
+}
+
+// 💾 Save Referral Data
+function saveReferrals(referrals) {
+  fs.writeFileSync(referralFile, JSON.stringify(referrals, null, 2));
+}
+
+let referrals = loadReferrals();
 const withdrawRequests = new Map(); // Store withdrawal codes
 
 // 🟢 Start Command
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
+  const args = ctx.message.text.split(" ");
 
   await ctx.reply("🚀 Checking if you have joined the channel...");
 
   try {
     const chatMember = await ctx.telegram.getChatMember(channel, userId);
-
     if (["member", "administrator", "creator"].includes(chatMember.status)) {
+      // ✅ User is a member, check referral
+      if (args.length > 1) {
+        const referrerId = args[1];
+
+        if (referrerId !== userId.toString()) {
+          if (!referrals[referrerId]) referrals[referrerId] = [];
+          if (!referrals[referrerId].includes(userId)) {
+            referrals[referrerId].push(userId);
+            saveReferrals(referrals);
+
+            ctx.telegram.sendMessage(
+              referrerId,
+              `🎉 *Someone joined using your link!* 🎯\n\n📊 Total referrals: ${referrals[referrerId].length}`,
+              { parse_mode: "Markdown" }
+            );
+          }
+        }
+      }
       showMainMenu(ctx);
     } else {
-        ctx.reply(
-            '❌ <b>You must join the channel to continue!</b>\n\n👉 <a href="https://t.me/netflixpremiumdaily">Click Here to Join</a>\n\n✅ Then, type /start again.',
-            { parse_mode: "HTML" }
-          );
-          
-          
+      ctx.reply(
+        '❌ <b>You must join the channel to continue!</b>\n\n👉 <a href="https://t.me/netflixpremiumdaily">Click Here to Join</a>\n\n✅ Then, type /start again.',
+        { parse_mode: "HTML" }
+      );
     }
   } catch (error) {
     ctx.reply("⚠ *Error checking membership:* " + error.message);
@@ -66,34 +97,10 @@ bot.action("refer", (ctx) => {
   );
 });
 
-// 📊 Track Referrals
-bot.command("start", (ctx) => {
-  const userId = ctx.from.id;
-  const args = ctx.message.text.split(" ");
-
-  if (args.length > 1) {
-    const referrerId = args[1];
-
-    if (referrerId !== userId.toString()) {
-      if (!referrals.has(referrerId)) referrals.set(referrerId, []);
-      if (!referrals.get(referrerId).includes(userId)) {
-        referrals.get(referrerId).push(userId);
-
-        ctx.telegram.sendMessage(
-          referrerId,
-          `🎉 *Someone joined using your link!* 🎯\n\n📊 Total referrals: ${referrals.get(referrerId).length}`,
-          { parse_mode: "Markdown" }
-        );
-      }
-    }
-  }
-  showMainMenu(ctx);
-});
-
 // 📊 My Points
 bot.action("mypoints", (ctx) => {
   const userId = ctx.from.id;
-  const points = referrals.get(userId)?.length || 0;
+  const points = referrals[userId]?.length || 0;
 
   ctx.reply(
     `📊 *Your Points:*\n\n✅ Total referrals: *${points}*\n\n${
@@ -106,7 +113,7 @@ bot.action("mypoints", (ctx) => {
 // 💰 Withdraw Request
 bot.action("withdraw", (ctx) => {
   const userId = ctx.from.id;
-  const points = referrals.get(userId)?.length || 0;
+  const points = referrals[userId]?.length || 0;
 
   if (points < 5) {
     ctx.reply("❌ *You need at least 5 referrals to withdraw rewards!*", { parse_mode: "Markdown" });
