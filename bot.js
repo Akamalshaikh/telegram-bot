@@ -123,11 +123,15 @@ bot.action("withdraw", (ctx) => {
   const uniqueCode = Math.floor(100000 + Math.random() * 900000).toString();
   withdrawRequests.set(userId, uniqueCode);
 
+  // ✅ Reset points to 1 after withdrawal
+  referrals[userId] = [userId]; // Keeps one referral (reset to 1)
+  saveReferrals(referrals); // Save changes
+
   ctx.reply(
     `✅ *Withdrawal Approved!*\n\n🔢 Your unique withdrawal code: \`${uniqueCode}\`\n\n📩 *DM the admin* [${adminUsername}](https://t.me/${adminUsername.replace(
       "@",
       ""
-    )})\n📌 Send this code to claim your reward!`,
+    )})\n📌 Send this code to claim your reward!\n\n⚠️ Your points have been reset to *1* after withdrawal.`,
     { parse_mode: "Markdown" }
   );
 });
