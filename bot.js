@@ -3,7 +3,9 @@ const { Telegraf } = require("telegraf");
 const fs = require("fs");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const channel = process.env.CHANNEL_USERNAME;
+const channel1 = process.env.CHANNEL_USERNAME; // Public channel
+const channel2 = process.env.SECOND_CHANNEL_ID; // Private channel ID
+const channel2Invite = process.env.SECOND_CHANNEL_INVITE; // Private channel invite link
 const adminUsername = process.env.ADMIN_USERNAME;
 const referralFile = "referrals.json";
 
@@ -21,31 +23,37 @@ function saveReferrals(referrals) {
 }
 
 let referrals = loadReferrals();
-const withdrawRequests = new Map(); // Store withdrawal codes
+const withdrawRequests = new Map();
 
 // 🟢 Start Command
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
   const args = ctx.message.text.split(" ");
 
-  await ctx.reply("🚀 Checking if you have joined the channel...");
+  await ctx.reply("🚀 Checking if you have joined both channels...");
 
   try {
-    const chatMember = await ctx.telegram.getChatMember(channel, userId);
-    if (["member", "administrator", "creator"].includes(chatMember.status)) {
-      // ✅ User is a member, check referral
+    // ✅ Check membership for both channels
+    const chatMember1 = await ctx.telegram.getChatMember(channel1, userId);
+    const chatMember2 = await ctx.telegram.getChatMember(channel2, userId);
+
+    if (
+      ["member", "administrator", "creator"].includes(chatMember1.status) &&
+      ["member", "administrator", "creator"].includes(chatMember2.status)
+    ) {
+      // ✅ User has joined both channels, proceed with referral
       if (args.length > 1) {
         const referrerId = args[1];
 
         if (referrerId !== userId.toString()) {
           if (!referrals[referrerId]) referrals[referrerId] = [];
-          if (!referrals[referrerId].includes(userId)) {
+          if (referrals[referrerId].length < 5 && !referrals[referrerId].includes(userId)) {
             referrals[referrerId].push(userId);
             saveReferrals(referrals);
 
             ctx.telegram.sendMessage(
               referrerId,
-              `🎉 *Someone joined using your link!* 🎯\n\n📊 Total referrals: ${referrals[referrerId].length}`,
+              `🎉 *Someone joined using your link!* 🎯\n\n📊 Total referrals: ${referrals[referrerId].length}/5`,
               { parse_mode: "Markdown" }
             );
           }
@@ -54,7 +62,7 @@ bot.start(async (ctx) => {
       showMainMenu(ctx);
     } else {
       ctx.reply(
-        '❌ <b>You must join the channel to continue!</b>\n\n👉 <a href="https://t.me/netflixpremiumdaily">Click Here to Join</a>\n\n✅ Then, type /start again.',
+        `❌ <b>You must join both channels to continue!</b>\n\n👉 <a href="https://t.me/netflixpremiumdaily">Join Channel 1</a>\n👉 <a href="${channel2Invite}">Join Channel 2</a>\n\n✅ Then, type /start again.`,
         { parse_mode: "HTML" }
       );
     }
@@ -103,7 +111,7 @@ bot.action("mypoints", (ctx) => {
   const points = referrals[userId]?.length || 0;
 
   ctx.reply(
-    `📊 *Your Points:*\n\n✅ Total referrals: *${points}*\n\n${
+    `📊 *Your Points:*\n\n✅ Total referrals: *${points}/5*\n\n${
       points >= 5 ? "🎉 You can now withdraw your reward!" : "⏳ Refer *5 people* to unlock withdrawals!"
     }`,
     { parse_mode: "Markdown" }
@@ -120,20 +128,41 @@ bot.action("withdraw", (ctx) => {
     return;
   }
 
+  ctx.reply(
+    "⚠️ *Warning:* Your points will reset to 0 after withdrawal!\n\nDo you still want to proceed?",
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✅ Yes, Withdraw", callback_data: "confirm_withdraw" }],
+          [{ text: "❌ No, Cancel", callback_data: "cancel_withdraw" }],
+        ],
+      },
+      parse_mode: "Markdown",
+    }
+  );
+});
+
+// ✅ Confirm Withdrawal
+bot.action("confirm_withdraw", (ctx) => {
+  const userId = ctx.from.id;
   const uniqueCode = Math.floor(100000 + Math.random() * 900000).toString();
   withdrawRequests.set(userId, uniqueCode);
 
-  // ✅ Reset points to 1 after withdrawal
-  referrals[userId] = [userId]; // Keeps one referral (reset to 1)
-  saveReferrals(referrals); // Save changes
+  referrals[userId] = []; // Reset referrals
+  saveReferrals(referrals);
 
   ctx.reply(
     `✅ *Withdrawal Approved!*\n\n🔢 Your unique withdrawal code: \`${uniqueCode}\`\n\n📩 *DM the admin* [${adminUsername}](https://t.me/${adminUsername.replace(
       "@",
       ""
-    )})\n📌 Send this code to claim your reward!\n\n⚠️ Your points have been reset to *1* after withdrawal.`,
+    )})\n📌 Send this code to claim your reward!\n\n⚠️ Your points have been reset to *0* after withdrawal.`,
     { parse_mode: "Markdown" }
   );
+});
+
+// ❌ Cancel Withdrawal
+bot.action("cancel_withdraw", (ctx) => {
+  ctx.reply("✅ *Withdrawal request canceled.*", { parse_mode: "Markdown" });
 });
 
 // 🔍 Admin Command: Lookup Codes
