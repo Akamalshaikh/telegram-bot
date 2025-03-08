@@ -3,9 +3,8 @@ const { Telegraf } = require("telegraf");
 const fs = require("fs");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
-const channel1 = process.env.CHANNEL_USERNAME; // Public channel
-const channel2 = process.env.SECOND_CHANNEL_ID; // Private channel ID
-const channel2Invite = process.env.SECOND_CHANNEL_INVITE; // Private channel invite link
+const channelId = process.env.CHANNEL_ID; // Single forced join channel
+const channelInvite = process.env.CHANNEL_INVITE; // Private channel invite link
 const adminUsername = process.env.ADMIN_USERNAME;
 const referralFile = "referrals.json";
 
@@ -30,18 +29,14 @@ bot.start(async (ctx) => {
   const userId = ctx.from.id;
   const args = ctx.message.text.split(" ");
 
-  await ctx.reply("🚀 Checking if you have joined both channels...");
+  await ctx.reply("🚀 Checking if you have joined the required channel...");
 
   try {
-    // ✅ Check membership for both channels
-    const chatMember1 = await ctx.telegram.getChatMember(channel1, userId);
-    const chatMember2 = await ctx.telegram.getChatMember(channel2, userId);
+    // ✅ Check membership for the required channel
+    const chatMember = await ctx.telegram.getChatMember(channelId, userId);
 
-    if (
-      ["member", "administrator", "creator"].includes(chatMember1.status) &&
-      ["member", "administrator", "creator"].includes(chatMember2.status)
-    ) {
-      // ✅ User has joined both channels, proceed with referral
+    if (["member", "administrator", "creator"].includes(chatMember.status)) {
+      // ✅ User has joined, proceed with referral
       if (args.length > 1) {
         const referrerId = args[1];
 
@@ -62,7 +57,7 @@ bot.start(async (ctx) => {
       showMainMenu(ctx);
     } else {
       ctx.reply(
-        `❌ <b>You must join both channels to continue!</b>\n\n👉 <a href="https://t.me/netflixpremiumdaily">Join Channel 1</a>\n👉 <a href="${channel2Invite}">Join Channel 2</a>\n\n✅ Then, type /start again.`,
+        `❌ <b>You must join the channel to continue!</b>\n\n👉 <a href="${channelInvite}">Click Here to Join</a>\n\n✅ Then, type /start again.`,
         { parse_mode: "HTML" }
       );
     }
