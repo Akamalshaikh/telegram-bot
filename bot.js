@@ -6,7 +6,9 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const channelId = process.env.CHANNEL_ID; // Single forced join channel
 const channelInvite = process.env.CHANNEL_INVITE; // Private channel invite link
 const adminUsername = process.env.ADMIN_USERNAME;
+const adminId = process.env.ADMIN_ID; // Admin's Telegram ID
 const referralFile = "referrals.json";
+const usersFile = "users.json"; // File to store user IDs
 
 // 🔄 Load Referral Data
 function loadReferrals() {
@@ -21,13 +23,32 @@ function saveReferrals(referrals) {
   fs.writeFileSync(referralFile, JSON.stringify(referrals, null, 2));
 }
 
+// 🔄 Load Users Data
+function loadUsers() {
+  if (fs.existsSync(usersFile)) {
+    return JSON.parse(fs.readFileSync(usersFile));
+  }
+  return [];
+}
+
+// 💾 Save Users Data
+function saveUsers(users) {
+  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+}
+
 let referrals = loadReferrals();
+let users = loadUsers();
 const withdrawRequests = new Map();
 
 // 🟢 Start Command
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
   const args = ctx.message.text.split(" ");
+
+  if (!users.includes(userId)) {
+    users.push(userId);
+    saveUsers(users);
+  }
 
   await ctx.reply("🚀 Checking if you have joined the required channel...");
 
@@ -160,25 +181,31 @@ bot.action("cancel_withdraw", (ctx) => {
   ctx.reply("✅ *Withdrawal request canceled.*", { parse_mode: "Markdown" });
 });
 
-// 🔍 Admin Command: Lookup Codes
-bot.command("lookupcodes", (ctx) => {
-  const adminId = ctx.from.id;
-  if (adminId.toString() !== process.env.ADMIN_ID) {
-    ctx.reply("❌ *Only the admin can access this command!*", { parse_mode: "Markdown" });
+// 📢 Broadcast Command (Admin Only)
+bot.command("broadcast", async (ctx) => {
+  const senderId = ctx.from.id.toString();
+  if (senderId !== adminId) {
+    ctx.reply("❌ *Only the admin can use this command!*", { parse_mode: "Markdown" });
     return;
   }
 
-  if (withdrawRequests.size === 0) {
-    ctx.reply("📜 *No withdrawal codes have been issued yet!*", { parse_mode: "Markdown" });
+  const messageText = ctx.message.text.split(" ").slice(1).join(" ");
+  if (!messageText) {
+    ctx.reply("⚠️ *Usage:* /broadcast Your Message Here", { parse_mode: "Markdown" });
     return;
   }
 
-  let message = "📜 *Withdrawal Codes:*\n\n";
-  withdrawRequests.forEach((code, user) => {
-    message += `👤 *User ID:* ${user} | 🔢 Code: \`${code}\`\n`;
-  });
+  let sentCount = 0;
+  for (const user of users) {
+    try {
+      await bot.telegram.sendMessage(user, `📢 *Admin Message:*\n\n${messageText}`, { parse_mode: "Markdown" });
+      sentCount++;
+    } catch (error) {
+      console.error(`❌ Failed to send message to ${user}:`, error.message);
+    }
+  }
 
-  ctx.reply(message, { parse_mode: "Markdown" });
+  ctx.reply(`✅ *Broadcast sent to ${sentCount} users!*`, { parse_mode: "Markdown" });
 });
 
 // Start bot
