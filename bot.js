@@ -6,9 +6,25 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const channelId = process.env.CHANNEL_ID; // Single forced join channel
 const channelInvite = process.env.CHANNEL_INVITE; // Private channel invite link
 const adminUsername = process.env.ADMIN_USERNAME;
-const adminId = process.env.ADMIN_ID; // Admin's Telegram ID
 const referralFile = "referrals.json";
-const usersFile = "users.json"; // File to store user IDs
+const usersFile = "users.json"; // Stores all user IDs
+
+// 🔄 Load User Data
+function loadUsers() {
+  if (fs.existsSync(usersFile)) {
+    return JSON.parse(fs.readFileSync(usersFile));
+  }
+  return [];
+}
+
+// 💾 Save User Data
+function saveUsers(users) {
+  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+}
+
+let users = loadUsers();
+let referrals = loadReferrals();
+const withdrawRequests = new Map();
 
 // 🔄 Load Referral Data
 function loadReferrals() {
@@ -23,44 +39,25 @@ function saveReferrals(referrals) {
   fs.writeFileSync(referralFile, JSON.stringify(referrals, null, 2));
 }
 
-// 🔄 Load Users Data
-function loadUsers() {
-  if (fs.existsSync(usersFile)) {
-    return JSON.parse(fs.readFileSync(usersFile));
-  }
-  return [];
-}
-
-// 💾 Save Users Data
-function saveUsers(users) {
-  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
-}
-
-let referrals = loadReferrals();
-let users = loadUsers();
-const withdrawRequests = new Map();
-
 // 🟢 Start Command
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
-  const args = ctx.message.text.split(" ");
 
+  // Store users who interact with the bot
   if (!users.includes(userId)) {
     users.push(userId);
     saveUsers(users);
   }
 
+  const args = ctx.message.text.split(" ");
   await ctx.reply("🚀 Checking if you have joined the required channel...");
 
   try {
-    // ✅ Check membership for the required channel
     const chatMember = await ctx.telegram.getChatMember(channelId, userId);
-
     if (["member", "administrator", "creator"].includes(chatMember.status)) {
       // ✅ User has joined, proceed with referral
       if (args.length > 1) {
         const referrerId = args[1];
-
         if (referrerId !== userId.toString()) {
           if (!referrals[referrerId]) referrals[referrerId] = [];
           if (referrals[referrerId].length < 5 && !referrals[referrerId].includes(userId)) {
@@ -176,36 +173,31 @@ bot.action("confirm_withdraw", (ctx) => {
   );
 });
 
-// ❌ Cancel Withdrawal
-bot.action("cancel_withdraw", (ctx) => {
-  ctx.reply("✅ *Withdrawal request canceled.*", { parse_mode: "Markdown" });
-});
-
-// 📢 Broadcast Command (Admin Only)
+// 🔊 Broadcast Message (Admin Only)
 bot.command("broadcast", async (ctx) => {
-  const senderId = ctx.from.id.toString();
-  if (senderId !== adminId) {
-    ctx.reply("❌ *Only the admin can use this command!*", { parse_mode: "Markdown" });
-    return;
+  const adminId = ctx.from.id.toString();
+
+  if (adminId !== process.env.ADMIN_ID) {
+    return ctx.reply("❌ *Only the admin can use this command!*", { parse_mode: "Markdown" });
   }
 
   const messageText = ctx.message.text.split(" ").slice(1).join(" ");
   if (!messageText) {
-    ctx.reply("⚠️ *Usage:* /broadcast Your Message Here", { parse_mode: "Markdown" });
-    return;
+    return ctx.reply("⚠️ *Please provide a message to broadcast!*", { parse_mode: "Markdown" });
   }
 
-  let sentCount = 0;
-  for (const user of users) {
+  let successCount = 0, failureCount = 0;
+  for (const userId of users) {
     try {
-      await bot.telegram.sendMessage(user, `📢 *Admin Message:*\n\n${messageText}`, { parse_mode: "Markdown" });
-      sentCount++;
+      await bot.telegram.sendMessage(userId, `📢 *Broadcast from Admin:*\n\n${messageText}`, { parse_mode: "Markdown" });
+      successCount++;
     } catch (error) {
-      console.error(`❌ Failed to send message to ${user}:`, error.message);
+      console.error(`Failed to send message to ${userId}:`, error.message);
+      failureCount++;
     }
   }
 
-  ctx.reply(`✅ *Broadcast sent to ${sentCount} users!*`, { parse_mode: "Markdown" });
+  ctx.reply(`✅ Broadcast completed!\n📤 Sent: ${successCount}\n❌ Failed: ${failureCount}`);
 });
 
 // Start bot
