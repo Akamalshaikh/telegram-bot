@@ -4,27 +4,19 @@ const fs = require("fs");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const channelId = process.env.CHANNEL_ID; // Single forced join channel
-const channelInvite = process.env.CHANNEL_INVITE; // Private channel invite link
+const channelInvite = process.env.CHANNEL_INVITE;
 const adminUsername = process.env.ADMIN_USERNAME;
+const adminId = parseInt(process.env.ADMIN_ID);
 const referralFile = "referrals.json";
-const usersFile = "users.json"; // Stores all user IDs
+const usersFile = "users.json"; // Store all users
 
-// 🔄 Load User Data
+// 🔄 Load Users Data
 function loadUsers() {
   if (fs.existsSync(usersFile)) {
     return JSON.parse(fs.readFileSync(usersFile));
   }
   return [];
 }
-
-// 💾 Save User Data
-function saveUsers(users) {
-  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
-}
-
-let users = loadUsers();
-let referrals = loadReferrals();
-const withdrawRequests = new Map();
 
 // 🔄 Load Referral Data
 function loadReferrals() {
@@ -34,30 +26,39 @@ function loadReferrals() {
   return {};
 }
 
+// 💾 Save Users Data
+function saveUsers(users) {
+  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+}
+
 // 💾 Save Referral Data
 function saveReferrals(referrals) {
   fs.writeFileSync(referralFile, JSON.stringify(referrals, null, 2));
 }
 
+let users = loadUsers();
+let referrals = loadReferrals();
+const withdrawRequests = new Map();
+
 // 🟢 Start Command
 bot.start(async (ctx) => {
   const userId = ctx.from.id;
+  const args = ctx.message.text.split(" ");
 
-  // Store users who interact with the bot
   if (!users.includes(userId)) {
     users.push(userId);
     saveUsers(users);
   }
 
-  const args = ctx.message.text.split(" ");
   await ctx.reply("🚀 Checking if you have joined the required channel...");
 
   try {
     const chatMember = await ctx.telegram.getChatMember(channelId, userId);
+
     if (["member", "administrator", "creator"].includes(chatMember.status)) {
-      // ✅ User has joined, proceed with referral
       if (args.length > 1) {
         const referrerId = args[1];
+
         if (referrerId !== userId.toString()) {
           if (!referrals[referrerId]) referrals[referrerId] = [];
           if (referrals[referrerId].length < 5 && !referrals[referrerId].includes(userId)) {
@@ -173,31 +174,33 @@ bot.action("confirm_withdraw", (ctx) => {
   );
 });
 
-// 🔊 Broadcast Message (Admin Only)
+// 📢 Broadcast Command (Admin Only)
 bot.command("broadcast", async (ctx) => {
-  const adminId = ctx.from.id.toString();
+  const userId = ctx.from.id;
 
-  if (adminId !== process.env.ADMIN_ID) {
+  if (userId !== adminId) {
     return ctx.reply("❌ *Only the admin can use this command!*", { parse_mode: "Markdown" });
   }
 
-  const messageText = ctx.message.text.split(" ").slice(1).join(" ");
-  if (!messageText) {
-    return ctx.reply("⚠️ *Please provide a message to broadcast!*", { parse_mode: "Markdown" });
+  const message = ctx.message.text.replace("/broadcast", "").trim();
+
+  if (!message) {
+    return ctx.reply("❌ *Please provide a message to broadcast!*\n\nUsage: `/broadcast Your Message`", {
+      parse_mode: "Markdown",
+    });
   }
 
-  let successCount = 0, failureCount = 0;
-  for (const userId of users) {
+  let sentCount = 0;
+  users.forEach(async (user) => {
     try {
-      await bot.telegram.sendMessage(userId, `📢 *Broadcast from Admin:*\n\n${messageText}`, { parse_mode: "Markdown" });
-      successCount++;
+      await bot.telegram.sendMessage(user, message, { parse_mode: "Markdown" });
+      sentCount++;
     } catch (error) {
-      console.error(`Failed to send message to ${userId}:`, error.message);
-      failureCount++;
+      console.error(`Failed to send message to ${user}: ${error.message}`);
     }
-  }
+  });
 
-  ctx.reply(`✅ Broadcast completed!\n📤 Sent: ${successCount}\n❌ Failed: ${failureCount}`);
+  ctx.reply(`✅ Broadcast sent to ${sentCount} users!`);
 });
 
 // Start bot
